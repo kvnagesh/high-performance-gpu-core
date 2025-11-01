@@ -236,4 +236,45 @@ module multi_precision_alu (
         endcase
     end
 
+        // FP16 operations
+    always_comb begin
+        case (opcode)
+            5'h00: result_fp16 = operand_a[15:0] + operand_b[15:0];  // FP16 ADD
+            5'h01: result_fp16 = operand_a[15:0] - operand_b[15:0];  // FP16 SUB
+            5'h02: result_fp16 = operand_a[15:0] * operand_b[15:0];  // FP16 MUL
+            5'h03: result_fp16 = (operand_a[15:0] * operand_b[15:0]) + result[15:0];  // FP16 FMA
+            default: result_fp16 = 32'h0;
+        endcase
+    end
+
+    // INT16 operations
+    always_comb begin
+        case (opcode)
+            5'h00: result_int16 = $signed(operand_a[15:0]) + $signed(operand_b[15:0]);  // INT16 ADD
+            5'h01: result_int16 = $signed(operand_a[15:0]) - $signed(operand_b[15:0]);  // INT16 SUB
+            5'h02: result_int16 = $signed(operand_a[15:0]) * $signed(operand_b[15:0]);  // INT16 MUL
+            5'h04: result_int16 = operand_a[15:0] & operand_b[15:0];  // INT16 AND
+            5'h05: result_int16 = operand_a[15:0] | operand_b[15:0];  // INT16 OR
+            5'h06: result_int16 = operand_a[15:0] ^ operand_b[15:0];  // INT16 XOR
+            5'h07: result_int16 = operand_a[15:0] << operand_b[4:0];  // INT16 SHL
+            5'h08: result_int16 = operand_a[15:0] >> operand_b[4:0];  // INT16 SHR
+            default: result_int16 = 32'h0;
+        endcase
+    end
+
+    // INT8 operations
+    always_comb begin
+        case (opcode)
+            5'h00: result_int8 = $signed(operand_a[7:0]) + $signed(operand_b[7:0]);  // INT8 ADD
+            5'h01: result_int8 = $signed(operand_a[7:0]) - $signed(operand_b[7:0]);  // INT8 SUB
+            5'h02: result_int8 = $signed(operand_a[7:0]) * $signed(operand_b[7:0]);  // INT8 MUL
+            5'h04: result_int8 = operand_a[7:0] & operand_b[7:0];  // INT8 AND
+            5'h05: result_int8 = operand_a[7:0] | operand_b[7:0];  // INT8 OR
+            5'h06: result_int8 = operand_a[7:0] ^ operand_b[7:0];  // INT8 XOR
+            5'h07: result_int8 = operand_a[7:0] << operand_b[2:0];  // INT8 SHL
+            5'h08: result_int8 = operand_a[7:0] >> operand_b[2:0];  // INT8 SHR
+            default: result_int8 = 32'h0;
+        endcase
+    end
+
 endmodule
