@@ -1,7 +1,7 @@
 module cache_l2_enhanced (
     input  logic        clk,
     input  logic        rst_n,
-    input  logic [1:0]  slice_count_cfg, // 1:1 slice, 2:2 slices, 3:4 slices
+    input  logic [1:0]  slice_count_cfg, // 1:1 slice, 2:2 slices, 3:4 slic// 1:512KB, 2:1MB, 3:2MB (ARM G720 target)
 
     // CPU/GPU fabric request (simplified AXI-lite like)
     input  logic        req_valid,
