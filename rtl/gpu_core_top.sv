@@ -48,6 +48,15 @@ module gpu_core_top #(
     //==========================================================================
     // Shader Core Array - Main compute engines
     //==========================================================================
+        
+    // Power management signals
+    logic [NUM_SHADER_CORES-1:0] shader_power_gate;  // Per-core power gating
+    logic [NUM_RAY_UNITS-1:0] ray_unit_power_gate;   // Per-RT unit power gating
+    logic [NUM_TMUS-1:0] tmu_power_gate;             // Per-TMU power gating
+    logic [NUM_SHADER_CORES-1:0] shader_clk_gate;    // Per-core clock gating
+    logic dvfs_voltage_req;                           // Voltage scaling request
+    logic [7:0] dvfs_freq_div;                        // Frequency divider
+    logic thermal_throttle;                           // Thermal throttling active
     genvar i;
     generate
         for (i = 0; i < NUM_SHADER_CORES; i++) begin : shader_core_array
@@ -61,7 +70,11 @@ module gpu_core_top #(
                                 // Instruction interface
                 .instruction(32'h0),  // TODO: Connect to instruction cache
                 .instr_valid(1'b0),
-                .instr_ready(),
+                .instr_ready(),,
+                
+                // Power management
+                .power_gate_en(!shader_power_gate[i]),   // Active low power gating
+                .clk_gate_en(!shader_clk_gate[i])        // Active low clock gating
                 // Memory interface  
                 .mem_addr(),
                 .mem_read(),
@@ -83,7 +96,10 @@ module gpu_core_top #(
             ray_tracing_unit ray_inst (
                 .clk(clk_2GHz),
                 .rst_n(rst_n),
-                .busy(ray_unit_busy[i])
+                .busy(ray_unit_busy[i]),
+                
+                // Power management
+                .power_gate_en(!ray_unit_power_gate[i])  // Active low power gating
             );
         end
     endgenerate
@@ -96,7 +112,10 @@ module gpu_core_top #(
             tmu_enhanced tmu_inst (
                 .clk(clk_2GHz),
                 .rst_n(rst_n)
-                // TODO: Add TMU port connections
+                // TODO: Add TMU port connections,
+                
+                // Power management
+                .power_gate_en(!tmu_power_gate[i])       // Active low power gating
             );
         end
     endgenerate
@@ -150,7 +169,22 @@ module gpu_core_top #(
         .rst_n(rst_n),
         .perf_mode(perf_mode),
         .power_down(power_down),
-        .thermal_status(thermal_status)
+        .thermal_status(thermal_statu,
+        
+        // Power gating outputs
+        .shader_power_gate(shader_power_gate),
+        .ray_unit_power_gate(ray_unit_power_gate),
+        .tmu_power_gate(tmu_power_gate),
+        .shader_clk_gate(shader_clk_gate),
+        
+        // DVFS control outputs
+        .voltage_req(dvfs_voltage_req),
+        .freq_divider(dvfs_freq_div),
+        .thermal_throttle(thermal_throttle),
+        
+        // Utilization inputs for adaptive power management
+        .shader_utilization(shader_busy),
+        .ray_unit_utilization(ray_unit_busy))
     );
 
     //==========================================================================
