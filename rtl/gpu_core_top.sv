@@ -58,7 +58,19 @@ module gpu_core_top #(
                 .clk(clk_2GHz),
                 .rst_n(rst_n),
                 .busy(shader_busy[i])
-                // Additional connections...
+                                // Instruction interface
+                .instruction(32'h0),  // TODO: Connect to instruction cache
+                .instr_valid(1'b0),
+                .instr_ready(),
+                // Memory interface  
+                .mem_addr(),
+                .mem_read(),
+                .mem_write(),
+                .mem_data(),
+                // Status outputs
+                .active_warps(),
+                .inst_count(),
+                .alu_utilization()
             );
         end
     endgenerate
@@ -72,7 +84,6 @@ module gpu_core_top #(
                 .clk(clk_2GHz),
                 .rst_n(rst_n),
                 .busy(ray_unit_busy[i])
-                // BVH traversal, intersection logic...
             );
         end
     endgenerate
@@ -82,71 +93,66 @@ module gpu_core_top #(
     //==========================================================================
     generate
         for (i = 0; i < NUM_TMUS; i++) begin : tmu_array
-            tmus #(
-                .FILTER_STAGES(4)
+            tmu_enhanced #(
             ) tmu_inst (
                 .clk(clk_2GHz),
                 .rst_n(rst_n)
-                // Texture fetch, filtering, compression...
-            );
         end
     endgenerate
 
     //==========================================================================
     // Variable Rate Shading Unit
     //==========================================================================
-    vrs_unit vrs_inst (
+    vrs_tier2_unit vrs_inst (
         .clk(clk_2GHz),
         .rst_n(rst_n)
-        // Tile-based shading control...
     );
 
     //==========================================================================
     // Rasterizer Pipeline
     //==========================================================================
-    rasterizer raster_inst (
-        .clk(clk_2GHz),
-        .rst_n(rst_n)
-        // Triangle setup, edge walking, attribute interpolation...
+    // TODO: Implement rasterizer module
+    // r//asterizer raster_inst (
+        //.clk(clk_2GHz),
+        //.rst_n(rst_n)
     );
 
     //==========================================================================
     // Cache Hierarchy (L0/L1/L2 unified)
     //==========================================================================
-    cache_hierarchy #(
-        .L2_SIZE(L2_CACHE_SIZE),
-        .LINE_SIZE(CACHE_LINE_SIZE)
-    ) cache_inst (
-        .clk(clk_2GHz),
-        .rst_n(rst_n),
+    // TODO: Implement cache hierarchy module
+    // c//ache_hierarchy #(
+        //.L2_SIZE(L2_CACHE_SIZE),
+        //.LINE_SIZE(CACHE_LINE_SIZE)
+    ) ca//che_inst (
+        //.clk(clk_2GHz),
+        //.rst_n(rst_n),
         .cache_miss(cache_miss)
-        // Cache coherency, eviction policies...
     );
-
+//
     //==========================================================================
     // Memory Controller
     //==========================================================================
-    memory_controller mem_ctrl (
-        .clk(clk_2GHz),
-        .rst_n(rst_n),
-        .mem_addr(mem_addr),
-        .mem_read_req(mem_read_req),
-        .mem_write_req(mem_write_req),
-        .mem_data(mem_data),
-        .mem_ready(mem_ready)
-        // Burst optimization, QoS handling...
+    // TODO: Implement memory controller module
+    // m//emory_controller mem_ctrl (
+        //.clk(clk_2GHz),
+        //.rst_n(rst_n),
+        //.mem_addr(mem_addr),
+        //.mem_read_req(mem_read_req),
+        //.mem_write_req(mem_write_req),
+        //.mem_data(mem_data),
+        //.mem_ready(mem_ready)
     );
-
+//
     //==========================================================================
     // Power Manager - Dynamic voltage/frequency scaling
     //==========================================================================
-    power_manager pm_inst (
+    dvfs_controller dvfs_inst (
         .clk(clk_2GHz),
         .rst_n(rst_n),
         .perf_mode(perf_mode),
         .power_down(power_down),
         .thermal_status(thermal_status)
-        // Clock gating, power domains...
     );
 
     //==========================================================================
