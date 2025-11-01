@@ -91,15 +91,15 @@ module gpu_core_top #(
     //==========================================================================
     // Texture Management Units (TMUs)
     //==========================================================================
-    generate
+        generate
         for (i = 0; i < NUM_TMUS; i++) begin : tmu_array
-            tmu_enhanced #(
-            ) tmu_inst (
+            tmu_enhanced tmu_inst (
                 .clk(clk_2GHz),
                 .rst_n(rst_n)
+                // TODO: Add TMU port connections
+            );
         end
     endgenerate
-
     //==========================================================================
     // Variable Rate Shading Unit
     //==========================================================================
@@ -108,43 +108,41 @@ module gpu_core_top #(
         .rst_n(rst_n)
     );
 
-    //==========================================================================
+        //==========================================================================
     // Rasterizer Pipeline
     //==========================================================================
     // TODO: Implement rasterizer module
-    // r//asterizer raster_inst (
-        //.clk(clk_2GHz),
-        //.rst_n(rst_n)
-    );
-
-    //==========================================================================
+    // rasterizer raster_inst (
+    //     .clk(clk_2GHz),
+    //     .rst_n(rst_n)
+    // );
+        //==========================================================================
     // Cache Hierarchy (L0/L1/L2 unified)
     //==========================================================================
     // TODO: Implement cache hierarchy module
-    // c//ache_hierarchy #(
-        //.L2_SIZE(L2_CACHE_SIZE),
-        //.LINE_SIZE(CACHE_LINE_SIZE)
-    ) ca//che_inst (
-        //.clk(clk_2GHz),
-        //.rst_n(rst_n),
-        .cache_miss(cache_miss)
-    );
+    // cache_hierarchy #(
+    //     .L2_SIZE(L2_CACHE_SIZE),
+    //     .LINE_SIZE(CACHE_LINE_SIZE)
+    // ) cache_inst (
+    //     .clk(clk_2GHz),
+    //     .rst_n(rst_n),
+    //     .cache_miss(cache_miss)
+    // ););
 //
-    //==========================================================================
+        //==========================================================================
     // Memory Controller
     //==========================================================================
     // TODO: Implement memory controller module
-    // m//emory_controller mem_ctrl (
-        //.clk(clk_2GHz),
-        //.rst_n(rst_n),
-        //.mem_addr(mem_addr),
-        //.mem_read_req(mem_read_req),
-        //.mem_write_req(mem_write_req),
-        //.mem_data(mem_data),
-        //.mem_ready(mem_ready)
-    );
-//
-    //==========================================================================
+    // memory_controller mem_ctrl (
+    //     .clk(clk_2GHz),
+    //     .rst_n(rst_n),
+    //     .mem_addr(mem_addr),
+    //     .mem_read_req(mem_read_req),
+    //     .mem_write_req(mem_write_req),
+    //     .mem_data(mem_data),
+    //     .mem_ready(mem_ready)
+    // );
+//==========================================================================
     // Power Manager - Dynamic voltage/frequency scaling
     //==========================================================================
     dvfs_controller dvfs_inst (
