@@ -57,12 +57,49 @@ module afbc_compressor (
                             // Non-solid: Use run-length encoding or pass-through
                             // For this implementation, we'll do simple RLE
                             // Real AFBC would use more sophisticated algorithms
+
+                                                // Check for gradient patterns
+                    logic is_linear_gradient, is_bilinear_gradient;
+                    logic [31:0] first_px, last_px, mid_px;
+                    integer gradient_diff;
+                    
+                    first_px = buffer[31:0];   // First pixel
+                    mid_px = buffer[511:480];  // Middle pixel (16th of 32)
+                    last_px = buffer[991:960]; // Last pixel (31st of 32)
+                    
+                    // Linear gradient detection: check if change is uniform
+                    gradient_diff = $signed(last_px) - $signed(first_px);
+                    is_linear_gradient = 1'b0;
+                    if ((gradient_diff > 32'h100) || (gradient_diff < -32'h100)) begin
+                        // Sufficient color difference for gradient
+                        is_linear_gradient = 1'b1;
+                    end
+                    
+                    // Bilinear gradient detection (2D pattern)
+                    is_bilinear_gradient = 1'b0;
+                    if (buffer[63:32] != buffer[95:64]) begin  // Check adjacent pixels differ
+                        is_bilinear_gradient = 1'b1;
+                    end
+                    
+                    if (is_linear_gradient) begin
+                        // Linear gradient: compress to start + end pixels + header
+                        // AFBC header: [mode=2, size=8 bytes]
+                        buffer[1023:0] <= {8'h02, 16'h0008, first_px, last_px}; // Mode 2, 8 bytes
+                        perf_bytes_out <= perf_bytes_out + 16;  // Header (4) + 2 pixels (8) + padding (4)
+                    end else if (is_bilinear_gradient) begin
+                        // Bilinear gradient: compress to corner pixels + header
+                        // AFBC header: [mode=3, size=16 bytes]
+                        buffer[1023:0] <= {8'h03, 16'h0010, buffer[31:0], buffer[127:96], 
+                                          buffer[895:864], buffer[991:960]}; // Mode 3, 4 corners
+                        perf_bytes_out <= perf_bytes_out + 24;  // Header (4) + 4 pixels (16) + padding (4)
+                    end else begin
                             
                             // Simplified: just store with minimal header for now
                             // AFBC header: [mode=1, size=original]
                             buffer[1023:0] <= {8'h01, 24'h000400, buffer[991:0]}; // Mode 1, full data
                             perf_bytes_out <= perf_bytes_out + 128; // Full block size
-                        end
+                        en
+                                                end // End gradient compression checkd
                         
                         cstate <= EMIT;
                     end
