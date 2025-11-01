@@ -6,9 +6,8 @@
 //==============================================================================
 
 module shader_core #(
-    parameter integer SIMD_WIDTH = 32,      // Number of parallel ALUs
-    parameter integer REG_FILE_SIZE = 256,  // Register file entries
-    parameter integer WARP_SIZE = 32        // Threads per warp
+    parameter integer SIMD_WIDTH = 16,         // Number of parallel ALUs (ARM: 16-wide)    parameter integer REG_FILE_SIZE = 256,  // Register file entries
+    parameter integer WARP_SIZE = 16        // Threads per warp
 ) (
     input  logic clk,
     input  logic rst_n,
