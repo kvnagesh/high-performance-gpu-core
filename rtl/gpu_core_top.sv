@@ -1,320 +1,108 @@
-//==============================================================================
-// Module: gpu_core_top
-// Description: Top-level GPU core integration for high-performance mobile gaming
-//              - 2 TFLOPs compute @ 2GHz
-//              - Console-class rendering with ray tracing and VRS
-//              - Optimized for power efficiency and mobile SoC integration
-//==============================================================================
+// Insert Pixel Backend between rasterizer and AFBC/tile writeback
+// Declarations for connections
+  // Fragment signals from rasterizer
+  logic        pb_frag_valid;
+  logic        pb_frag_ready;
+  logic [127:0] pb_frag_data;
+  logic [15:0]  pb_frag_x, pb_frag_y;
+  logic [31:0]  pb_frag_depth;
+  logic [7:0]   pb_frag_stencil;
+  logic [31:0]  pb_frag_r, pb_frag_g, pb_frag_b, pb_frag_a;
+  logic [3:0]   pb_frag_rt;
+  logic         pb_early_z_kill, pb_early_z_valid;
 
-module gpu_core_top #(
-    parameter integer NUM_SHADER_CORES  = 16,   // Configurable for scalability
-    parameter integer NUM_TMUS          = 8,    // Texture mapping units
-    parameter integer NUM_RAY_UNITS     = 4,    // Ray tracing acceleration units
-    parameter integer CACHE_LINE_SIZE   = 128,  // bytes
-    parameter integer L2_CACHE_SIZE     = 512   // KB
-) (
-    // Clock and reset
-    input  logic clk_2GHz,
-    input  logic rst_n,
-    
-    // Host interface (command processor)
-    input  logic [63:0] host_cmd_data,
-    input  logic        host_cmd_valid,
-    output logic        host_cmd_ready,
-    output logic [31:0] gpu_status,
-    
-    // Memory interface (LPDDR5/HBM)
-    output logic [31:0]  mem_addr,
-    output logic         mem_read_req,
-    output logic         mem_write_req,
-    inout  logic [255:0] mem_data,
-    input  logic         mem_ready,
-    
-    // Power management
-    output logic       power_down,
-    input  logic [1:0] perf_mode,  // 00: Low, 01: Balanced, 10: High, 11: Turbo
-    
-    // Debug and monitoring
-    output logic [31:0] debug_counters,
-    output logic [7:0]  thermal_status
-);
+  // Tile/DRAM interface
+  logic         pb_tile_valid, pb_tile_ready;
+  logic [15:0]  pb_tile_x, pb_tile_y;
+  logic [3:0]   pb_tile_rt;
+  logic         pb_tile_complete, pb_tile_use_afbc;
+  logic [63:0]  pb_tile_addr;
+  logic [31:0]  pb_tile_size;
+  logic         pb_dram_wr_req, pb_dram_wr_ack;
+  logic [63:0]  pb_dram_addr;
+  logic [31:0]  pb_dram_len;
+  logic [255:0] pb_dram_wdata;
+  logic         pb_dram_last;
 
-    // Internal signals
-    logic [NUM_SHADER_CORES-1:0] shader_busy;
-    logic [NUM_RAY_UNITS-1:0]    ray_unit_busy;
-    logic                        cache_miss;
-    logic [15:0]                 active_threads;
-    
-    //==========================================================================
-    // Interconnect signals for instruction cache and memory
-    //==========================================================================
-    logic [31:0] icache_instr [NUM_SHADER_CORES];
-    logic [NUM_SHADER_CORES-1:0] icache_valid;
-    logic [NUM_SHADER_CORES-1:0] icache_ready;
-    
-    // Memory controller interconnect
-    logic [31:0] mem_ctrl_addr;
-    logic        mem_ctrl_read;
-    logic        mem_ctrl_write;
-    logic [255:0] mem_ctrl_wdata;
-    logic [255:0] mem_ctrl_rdata;
-    logic        mem_ctrl_ready;
-    
-    // TMU interconnect signals
-    logic [NUM_TMUS-1:0]         tmu_req_valid;
-    logic [NUM_TMUS-1:0]         tmu_req_ready;
-    logic [31:0]                 tmu_addr [NUM_TMUS];
-    logic [NUM_TMUS-1:0][127:0]  tmu_texel_out;
-    logic [NUM_TMUS-1:0]         tmu_out_valid;
-    
-    // Rasterizer signals
-    logic        rast_prim_valid;
-    logic        rast_prim_ready;
-    logic [15:0] rast_v0_x, rast_v0_y, rast_v1_x, rast_v1_y, rast_v2_x, rast_v2_y;
-    logic        rast_frag_valid;
-    logic        rast_frag_ready;
-    logic [15:0] rast_frag_x, rast_frag_y;
-    
-    //==========================================================================
-    // Shader Core Array - Main compute engines
-    //==========================================================================
-    
-    // Power management signals
-    logic [NUM_SHADER_CORES-1:0] shader_power_gate;  // Per-core power gating
-    logic [NUM_RAY_UNITS-1:0]    ray_unit_power_gate;  // Per-RT unit power gating
-    logic [NUM_TMUS-1:0]         tmu_power_gate;  // Per-TMU power gating
-    logic [NUM_SHADER_CORES-1:0] shader_clk_gate;  // Per-core clock gating
-    logic                        dvfs_voltage_req;  // Voltage scaling request
-    logic [7:0]                  dvfs_freq_div;  // Frequency divider
-    logic                        thermal_throttle;  // Thermal throttling active
-    
-    genvar i;
-    generate
-        for (i = 0; i < NUM_SHADER_CORES; i++) begin : shader_core_array
-            shader_core #(
-                .SIMD_WIDTH(32),
-                .REG_FILE_SIZE(256)
-            ) shader_inst (
-                .clk(clk_2GHz),
-                .rst_n(rst_n),
-                .busy(shader_busy[i]),
-                
-                // Instruction interface - Connected to instruction cache
-                .instruction(icache_instr[i]),
-                .instr_valid(icache_valid[i]),
-                .instr_ready(icache_ready[i]),
-                
-                // Power management
-                .power_gate_en(!shader_power_gate[i]),  // Active low power gating
-                .clk_gate_en(!shader_clk_gate[i]),      // Active low clock gating
-                
-                // Memory interface
-                .mem_addr(),
-                .mem_read(),
-                .mem_write(),
-                .mem_data(),
-                
-                // Status outputs
-                .active_warps(),
-                .inst_count(),
-                .alu_utilization()
-            );
-        end
-    endgenerate
+  // Simple mapping from rasterizer for now
+  assign pb_frag_valid   = rast_frag_valid;
+  assign rast_frag_ready = pb_frag_ready;
+  assign pb_frag_x       = rast_frag_x;
+  assign pb_frag_y       = rast_frag_y;
+  assign pb_frag_depth   = 32'(0);
+  assign pb_frag_stencil = 8'(0);
+  assign pb_frag_r       = 32'(0);
+  assign pb_frag_g       = 32'(0);
+  assign pb_frag_b       = 32'(0);
+  assign pb_frag_a       = 32'hFFFF_FFFF; // opaque
+  assign pb_frag_rt      = 4'(0);
+  assign pb_early_z_kill = 1'b0;
+  assign pb_early_z_valid= 1'b0;
 
-    //==========================================================================
-    // Ray Tracing Units - Hardware RT acceleration
-    //==========================================================================
-    generate
-        for (i = 0; i < NUM_RAY_UNITS; i++) begin : ray_tracing_unit_array
-            ray_tracing_unit ray_inst (
-                .clk(clk_2GHz),
-                .rst_n(rst_n),
-                .busy(ray_unit_busy[i]),
-                
-                // Power management
-                .power_gate_en(!ray_unit_power_gate[i])  // Active low power gating
-            );
-        end
-    endgenerate
+  // Configuration CSR passthrough (tie-off here; hook to host later)
+  logic pb_reg_we, pb_reg_re; logic [15:0] pb_reg_addr; logic [31:0] pb_reg_wdata, pb_reg_rdata; logic pb_reg_rvalid;
+  assign pb_reg_we=1'b0; assign pb_reg_re=1'b0; assign pb_reg_addr='0; assign pb_reg_wdata='0;
 
-    //==========================================================================
-    // Texture Management Units (TMUs)
-    //==========================================================================
-    generate
-        for (i = 0; i < NUM_TMUS; i++) begin : tmu_array
-            tmu_enhanced tmu_inst (
-                .clk(clk_2GHz),
-                .rst_n(rst_n),
-                
-                // Texture request interface
-                .req_valid(tmu_req_valid[i]),
-                .req_ready(tmu_req_ready[i]),
-                .tex_addr(tmu_addr[i]),
-                .tex_u(16'h0),  // U coordinate
-                .tex_v(16'h0),  // V coordinate
-                
-                // Texture output interface
-                .texel_out(tmu_texel_out[i]),
-                .out_valid(tmu_out_valid[i]),
-                .out_ready(1'b1),
-                
-                // Power management
-                .power_gate_en(!tmu_power_gate[i])  // Active low power gating
-            );
-        end
-    endgenerate
+  // Instantiate pixel backend
+  pixel_backend #(
+    .FRAG_DATA_WIDTH (128),
+    .DEPTH_WIDTH     (32),
+    .STENCIL_WIDTH   (8),
+    .COLOR_WIDTH     (32),
+    .NUM_RENDER_TARGETS(4),
+    .TILE_WIDTH      (16),
+    .TILE_HEIGHT     (16),
+    .REG_ADDR_WIDTH  (16),
+    .REG_DATA_WIDTH  (32)
+  ) u_pixel_backend (
+    .clk               (clk_2GHz),
+    .rst_n             (rst_n),
+    .frag_valid        (pb_frag_valid),
+    .frag_ready        (pb_frag_ready),
+    .frag_data         (pb_frag_data),
+    .frag_x            (pb_frag_x),
+    .frag_y            (pb_frag_y),
+    .frag_depth        (pb_frag_depth),
+    .frag_stencil      (pb_frag_stencil),
+    .frag_color_r      (pb_frag_r),
+    .frag_color_g      (pb_frag_g),
+    .frag_color_b      (pb_frag_b),
+    .frag_color_a      (pb_frag_a),
+    .frag_render_target(pb_frag_rt),
+    .early_z_kill      (pb_early_z_kill),
+    .early_z_valid     (pb_early_z_valid),
+    .reg_write_en      (pb_reg_we),
+    .reg_write_addr    (pb_reg_addr),
+    .reg_write_data    (pb_reg_wdata),
+    .reg_read_en       (pb_reg_re),
+    .reg_read_addr     (pb_reg_addr),
+    .reg_read_data     (pb_reg_rdata),
+    .reg_read_valid    (pb_reg_rvalid),
+    .tile_valid        (pb_tile_valid),
+    .tile_ready        (pb_tile_ready),
+    .tile_x            (pb_tile_x),
+    .tile_y            (pb_tile_y),
+    .tile_render_target(pb_tile_rt),
+    .tile_complete     (pb_tile_complete),
+    .tile_use_afbc     (pb_tile_use_afbc),
+    .tile_addr         (pb_tile_addr),
+    .tile_size         (pb_tile_size),
+    .dram_write_req    (pb_dram_wr_req),
+    .dram_write_ack    (pb_dram_wr_ack),
+    .dram_write_addr   (pb_dram_addr),
+    .dram_write_len    (pb_dram_len),
+    .dram_write_data   (pb_dram_wdata),
+    .dram_write_last   (pb_dram_last),
+    .pixel_count       (),
+    .tile_count        (),
+    .pipeline_busy     (),
+    .pipeline_stall    ()
+  );
 
-    //==========================================================================
-    // Variable Rate Shading Unit
-    //==========================================================================
-    vrs_tier2_unit vrs_inst (
-        .clk(clk_2GHz),
-        .rst_n(rst_n)
-    );
-
-    //==========================================================================
-    // Rasterizer Pipeline
-    //==========================================================================
-    rasterizer #(
-        .COORD_W(16),
-        .ATTR_W(128),
-        .NUM_ATTR(16),
-        .SUBPIX_BITS(4)
-    ) raster_inst (
-        .clk(clk_2GHz),
-        .rst_n(rst_n),
-        
-        // Triangle input interface
-        .prim_valid(rast_prim_valid),
-        .prim_ready(rast_prim_ready),
-        .v0_x(rast_v0_x), .v0_y(rast_v0_y),
-        .v1_x(rast_v1_x), .v1_y(rast_v1_y),
-        .v2_x(rast_v2_x), .v2_y(rast_v2_y),
-        .v0_z(16'h0), .v0_w(16'h0),
-        .v1_z(16'h0), .v1_w(16'h0),
-        .v2_z(16'h0), .v2_w(16'h0),
-        .v0_attr('{default: 128'h0}),
-        .v1_attr('{default: 128'h0}),
-        .v2_attr('{default: 128'h0}),
-        
-        // Fragment output interface
-        .frag_valid(rast_frag_valid),
-        .frag_ready(rast_frag_ready),
-        .frag_x(rast_frag_x),
-        .frag_y(rast_frag_y),
-        .frag_z(),
-        .frag_attr(),
-        
-        // Viewport and scissor configuration
-        .vp_x(16'h0), .vp_y(16'h0), .vp_w(16'd1920), .vp_h(16'd1080),
-        .sc_x(16'h0), .sc_y(16'h0), .sc_w(16'd1920), .sc_h(16'd1080),
-        
-        // Performance counters
-        .perf_prims_in(),
-        .perf_frags_out(),
-        .perf_pixels_covered()
-    );
-
-    //==========================================================================
-    // Cache Hierarchy (L0/L1/L2 unified)
-    //==========================================================================
-    cache_hierarchy #(
-        .L2_SIZE(L2_CACHE_SIZE),
-        .LINE_SIZE(CACHE_LINE_SIZE)
-    ) cache_inst (
-        .clk(clk_2GHz),
-        .rst_n(rst_n),
-        
-        // Instruction cache interface
-        .icache_req(icache_ready),
-        .icache_addr('{default: 32'h0}),
-        .icache_data(icache_instr),
-        .icache_valid(icache_valid),
-        
-        // Data cache interface
-        .dcache_req(1'b0),
-        .dcache_addr(32'h0),
-        .dcache_wdata(256'h0),
-        .dcache_we(1'b0),
-        .dcache_rdata(),
-        .dcache_valid(),
-        
-        // L2 cache miss signal
-        .cache_miss(cache_miss),
-        
-        // Memory controller interface
-        .mem_req(),
-        .mem_addr(),
-        .mem_wdata(),
-        .mem_we(),
-        .mem_rdata(mem_ctrl_rdata),
-        .mem_ready(mem_ctrl_ready)
-    );
-
-    //==========================================================================
-    // Memory Controller
-    //==========================================================================
-    memory_controller mem_ctrl (
-        .clk(clk_2GHz),
-        .rst_n(rst_n),
-        
-        // Internal interface from cache
-        .int_addr(mem_ctrl_addr),
-        .int_read(mem_ctrl_read),
-        .int_write(mem_ctrl_write),
-        .int_wdata(mem_ctrl_wdata),
-        .int_rdata(mem_ctrl_rdata),
-        .int_ready(mem_ctrl_ready),
-        
-        // External memory interface (LPDDR5/HBM)
-        .mem_addr(mem_addr),
-        .mem_read_req(mem_read_req),
-        .mem_write_req(mem_write_req),
-        .mem_data(mem_data),
-        .mem_ready(mem_ready)
-    );
-
-    //==========================================================================
-    // Power Manager - Dynamic voltage/frequency scaling
-    //==========================================================================
-    dvfs_controller dvfs_inst (
-        .clk(clk_2GHz),
-        .rst_n(rst_n),
-        .perf_mode(perf_mode),
-        .power_down(power_down),
-        .thermal_status(thermal_status),
-        
-        // Power gating outputs
-        .shader_power_gate(shader_power_gate),
-        .ray_unit_power_gate(ray_unit_power_gate),
-        .tmu_power_gate(tmu_power_gate),
-        .shader_clk_gate(shader_clk_gate),
-        
-        // DVFS control outputs
-        .voltage_req(dvfs_voltage_req),
-        .freq_divider(dvfs_freq_div),
-        .thermal_throttle(thermal_throttle),
-        
-        // Utilization inputs for adaptive power management
-        .shader_utilization(shader_busy),
-        .ray_unit_utilization(ray_unit_busy)
-    );
-
-    //==========================================================================
-    // Status and monitoring
-    //==========================================================================
-    always_ff @(posedge clk_2GHz or negedge rst_n) begin
-        if (!rst_n) begin
-            gpu_status      <= 32'h0;
-            debug_counters  <= 32'h0;
-        end else begin
-            // Aggregate status from all units
-            gpu_status[NUM_SHADER_CORES-1:0] <= shader_busy;
-            gpu_status[16]                    <= |ray_unit_busy;  // Any RT unit active
-            gpu_status[17]                    <= cache_miss;
-            gpu_status[31:18]                 <= active_threads[13:0];
-        end
-    end
-
-endmodule
+  // Connect tile writeback to memory controller stub (tie-offs for now)
+  assign pb_tile_ready  = 1'b1;
+  assign pb_dram_wr_ack = mem_ready;
+  // Example DRAM address passthrough
+  assign mem_write_req  = pb_dram_wr_req;
+  assign mem_addr       = pb_dram_addr[31:0];
+  assign mem_data       = pb_dram_wdata;
